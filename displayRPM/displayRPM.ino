@@ -1,50 +1,44 @@
 // Los numeros tienen un tamaño de 27 x 47 px
+// 1123549B
+// 1123373B
+// 1123217B   if-else
+// 1123225B   switch
+// 1112785B
 
 
 #include <SPI.h>
 #include <TFT_eSPI.h> // Hardware-specific library
 #include <XPT2046_Touchscreen.h>  // para el tactil
-
 #include <BluetoothSerial.h>
 #include "ELMduino.h"
 
-BluetoothSerial SerialBT;
-ELM327 myELM327;
-
 #define ELM_PORT   SerialBT
-
-typedef enum {RPM, velocidad, voltaje } obd_pid;
-obd_pid leer=RPM;
-
-
 #define T_MOSI 32
 #define T_MISO 39
 #define T_CLK 25
 #define T_CS 33
+#define LOOP_DELAY 75 // This controls how frequently the meter is updated
+#define color_background TFT_BLACK
 
+BluetoothSerial SerialBT;
+ELM327 myELM327;
 SPIClass mySpi = SPIClass(VSPI);
 XPT2046_Touchscreen ts(T_CS);
-
-#define LOOP_DELAY 35 // This controls how frequently the meter is updated
-
 TFT_eSPI tft = TFT_eSPI();            // Invoke custom library with default width and height
-TFT_eSprite spr = TFT_eSprite(&tft);  // Declare Sprite object "spr" with pointer to "tft" object
 
-#define color_background TFT_BLACK
-//#define color_rpm TFT_RED
-
-uint32_t runTime = 0;       // time for next update
-
-static uint16_t last_angle = 45;
+int runTime = 0;       // time for next update
+int last_angle = 45;
 int color_rpm[3]={TFT_GREEN,TFT_YELLOW,TFT_RED};
-float rpm = 0;
-float vel = 0;
+int rpm = 0;
+int vel = 0;
+
+String device_name = "ESP32-BT-Slave";
 
 
-float updte_rpm(float old_rpm);
+int updte_rpm(int old_rpm);
 void ringMeter(int x, int y, int r, int val);
-void numberMeter(uint16_t xpos, uint16_t ypos, int reading,uint8_t tamanio);
-float updte_vel(float old_vel);
+void numberMeter(int xpos, int ypos, int reading, int tamanio);
+int updte_vel(int old_vel);
 
 void setup(void) {
   Serial.begin(115200);
@@ -65,36 +59,35 @@ void setup(void) {
 // const char ISO_14230_FAST_INIT        = '5';
   
   SerialBT.setPin("1234");
-  ELM_PORT.begin("ArduHUD", true);    // ArduHUD es el nombre del BT que pone el elm32
-  
+  SerialBT.begin("ArduHUD", true);    // ArduHUD es el nombre del BT que pone el elm32
+//  SerialBT.begin("ESP-32");
+
   if (!ELM_PORT.connect("OBDII"))
   {
-    Serial.println("Error conexion bluetooth - Fase 1");
+    Serial.println(F("Error conexion bluetooth - Fase 1"));
     while(1);
   }
 
   if (!myELM327.begin(ELM_PORT, true, 2000,5))
   {
-    Serial.println("Error conexion OBD - Fase 2");
+    Serial.println(F("Error conexion OBD - Fase 2"));
     while (1);
   }
 
-  Serial.println("Conexion correcta");
+  Serial.println(F("Conexion correcta"));
 
 }
 
 
 void loop() {
 
-  static uint8_t radius = 110;
-  static int16_t xpos_rpm = tft.width() / 2 - 40;
-  static int16_t ypos_rpm = tft.height() / 2;
-  static int16_t xpos = tft.width() / 2;
-  static int16_t ypos = tft.height() / 2;
-  static int8_t pantalla = 1;
-  static int8_t pantalla_old=1;
-  uint8_t tocado=0;
-  static uint8_t hundido=0;
+  static int radius = 110;
+  static int xpos = tft.width() / 2;
+  static int ypos = tft.height() / 2;
+  static int pantalla = 1;
+  static int pantalla_old=1;
+  bool tocado=false;
+  static bool hundido=false;
 //  static float volts = myELM327.batteryVoltage();
 //  float ambientAirTemp();
 //  float fuelRate();
@@ -106,9 +99,9 @@ void loop() {
     
   
     if (ts.tirqTouched() && ts.touched()) {
-      tocado=1;
+      tocado=true;
     }
-    if(tocado==1 && hundido==0){
+    if(tocado==true && hundido==false){
       TS_Point p = ts.getPoint();
       if(p.x>1798){
         pantalla++;
@@ -122,39 +115,43 @@ void loop() {
         pantalla=3;
       }
     }
+    /*
     Serial.println(tocado);
     Serial.println(pantalla);
     Serial.println(pantalla_old);
+*/
 
-    if(pantalla==1){
-      if(pantalla_old!=1){
-        tft.fillScreen(TFT_BLACK);
-        last_angle=45;
-        ringMeter(xpos_rpm, ypos_rpm, radius, rpm); // Draw analogue meter
-        numberMeter(xpos_rpm+60,ypos_rpm,rpm,6);
-      }  
-      
-      rpm = updte_rpm(rpm);
-      vel = updte_vel(vel); 
+    switch(pantalla){
+      case 1:{
+        if(pantalla_old!=1){
+          tft.fillScreen(TFT_BLACK);
+          last_angle=45;
+          ringMeter(xpos-40, ypos, radius, rpm); // Draw analogue meter
+          numberMeter(xpos+20,ypos,rpm,6);
+        }  
+        
+        rpm = updte_rpm(rpm);
+        vel = updte_vel(vel); 
 
-      ringMeter(xpos_rpm, ypos_rpm, radius, rpm); // Draw analogue meter
-      numberMeter(xpos_rpm+60,ypos_rpm,rpm,6);
+        ringMeter(xpos-40, ypos, radius, rpm); // Draw analogue meter
+        numberMeter(xpos+20,ypos,rpm,6);
 
-      numberMeter(xpos+160,ypos+40, vel,8);
-
-    }else{
-      if(pantalla==2){
+        numberMeter(xpos+160,ypos+40, vel,8);
+        break;
+      }
+      case 2:{
         if(pantalla_old!=2){
           tft.fillScreen(TFT_WHITE);
         } 
-        tft.fillScreen(TFT_WHITE);
-      }else{
-        if(pantalla==3){
-          if(pantalla!=3){
-            tft.fillScreen(TFT_GREEN);
-          }
+        tft.fillScreen(TFT_WHITE);        
+        break;
+      }
+      case 3:{
+        if(pantalla!=3){
           tft.fillScreen(TFT_GREEN);
         }
+        tft.fillScreen(TFT_GREEN);
+        break;
       }
 
     }
@@ -174,26 +171,28 @@ void loop() {
 
 void ringMeter(int x, int y, int r, int val){
 
-  uint8_t thickness = 40;
-  static uint8_t last_i=1;
-  uint8_t i;
+  int thickness = 40;
+  static int last_i=1;
+  int i;
 //  int color_arco = color_rpm[0];
 //  int color_quito=color_background;
-
-  if(val>60){
+  
+  if(val>6000){
     i=2;
   }else{
-    if(val>45){
+    if(val>4500){
       i=1;
     }else{
       i=0;
     }
   }
+  
+  
 
   // Range here is 0-100 so value is scaled to an angle 45-270
-  int val_angle = map(val, 0, 70, 45, 270);       // Modo test
-//  int val_angle = map(val, 0, 7000, 45, 270);     // Modo coche
-    
+//  int val_angle = map(val, 0, 70, 45, 270);       // Modo test
+  int val_angle = map(val, 0, 7000, 45, 270);     // Modo coche
+  if(val>7000) val_angle=270;
 
   if (last_angle != val_angle) {      
     // Update the arc, only the zone between last_angle and new val_angle is updated
@@ -221,7 +220,7 @@ void ringMeter(int x, int y, int r, int val){
     Lo uso para escribir las rpms
   ************************************************************************************/
 
-void numberMeter(uint16_t xpos, uint16_t ypos, int reading,uint8_t tamanio){
+void numberMeter(int xpos, int ypos, int reading, int tamanio){
 
   char buf[8]; 
   dtostrf(reading, 1, 0, buf);
@@ -229,8 +228,11 @@ void numberMeter(uint16_t xpos, uint16_t ypos, int reading,uint8_t tamanio){
 
 }
 
-float updte_rpm(float old_rpm){
-  float rpm=myELM327.rpm();
+int updte_rpm(int old_rpm){
+  int rpm=(int)myELM327.rpm();
+//  char leido;
+//  int rpm=0;
+//  int tmp;
 
   if(myELM327.nb_rx_state == ELM_SUCCESS){
     if(rpm!=old_rpm){
@@ -244,10 +246,36 @@ float updte_rpm(float old_rpm){
 
   return(old_rpm);
 
+
+// 13 \r
+// 10 \n
+/*
+  if(SerialBT.available()){
+    leido=SerialBT.read();
+    Serial.print((int)leido);
+    Serial.println();
+      
+    while( ((int)leido) != 13 ){
+      rpm=rpm*10+leido-48;
+      Serial.print(rpm);
+      Serial.println();
+      leido=SerialBT.read();
+      Serial.print((int)leido);
+      Serial.println();
+      
+    }
+    while(SerialBT.available()){
+      SerialBT.read();
+    }
+    return(rpm);
+  }
+  return old_rpm;
+*/
+
 }
 
-float updte_vel(float old_vel){
-  float vel=myELM327.kph();
+int updte_vel(int old_vel){
+  int vel=(int)myELM327.kph();
 
   if(myELM327.nb_rx_state == ELM_SUCCESS){
     if( vel != old_vel ){
